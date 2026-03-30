@@ -7,14 +7,13 @@
 <style>
 body { background:#0d0d0d; color:#eee; font-family:sans-serif; padding:15px; }
 h1 { text-align:center; color:#f0c040; }
-.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
-.card { background:#161616; padding:14px; border-radius:10px; }
-.signal { font-size:26px; font-weight:bold; text-align:center; }
+.card { background:#161616; padding:14px; border-radius:10px; max-width:350px; margin:auto; }
+.signal { font-size:28px; font-weight:bold; text-align:center; margin:10px 0; }
 .UP { color:#00e676; }
 .DOWN { color:#ff5252; }
 .WAIT { color:#ffab40; }
-.ind { font-size:12px; margin-top:6px; color:#aaa; }
-.reason { font-size:11px; color:#888; margin-top:5px; }
+.ind { font-size:12px; margin-top:8px; color:#aaa; }
+.reason { font-size:11px; color:#888; margin-top:6px; }
 .topbar { display:flex; justify-content:space-between; margin-bottom:10px; }
 button { padding:6px 12px; background:#1e1e1e; color:#ccc; border:1px solid #333; border-radius:6px; cursor:pointer; }
 </style>
@@ -23,7 +22,7 @@ button { padding:6px 12px; background:#1e1e1e; color:#ccc; border:1px solid #333
 
 <body>
 
-<h1>⚡ PRO SIGNAL BOT</h1>
+<h1>⚡ EUR/USD SIGNAL BOT</h1>
 
 <div class="topbar">
   <button onclick="load()">Refresh</button>
@@ -35,11 +34,9 @@ button { padding:6px 12px; background:#1e1e1e; color:#ccc; border:1px solid #333
 <script>
 const API_KEY = "MB1YRLRNKNIMS677";
 
-const PAIRS = ["EURUSD"];
-
 // ---------- FETCH ----------
-async function getData(symbol){
-  const url = `https://www.alphavantage.co/query?function=FX_INTRADAY&from_symbol=${symbol.slice(0,3)}&to_symbol=${symbol.slice(3)}&interval=1min&outputsize=compact&apikey=${API_KEY}`;
+async function getData(){
+  const url = `https://www.alphavantage.co/query?function=FX_INTRADAY&from_symbol=EUR&to_symbol=USD&interval=1min&outputsize=compact&apikey=${API_KEY}`;
   const res = await fetch(url);
   const data = await res.json();
 
@@ -64,8 +61,13 @@ const EMA = (d,p)=>{let k=2/(p+1),e=d[0]; return d.map(v=>e=v*k+e*(1-k));};
 
 function RSI(d,p=14){
   let g=0,l=0;
-  for(let i=1;i<=p;i++){let x=d[i]-d[i-1]; x>0?g+=x:l-=x;}
-  let rs=g/l; return 100-(100/(1+rs));
+  for(let i=1;i<=p;i++){
+    let x=d[i]-d[i-1];
+    if(x>0) g+=x; else l-=x;
+  }
+  if(l===0) return 100;
+  let rs=g/l;
+  return 100-(100/(1+rs));
 }
 
 function MACD(d){
@@ -114,8 +116,8 @@ function analyze(d){
   if(macd>0){score+=2; reasons.push("MACD bullish");}
   else{score-=2; reasons.push("MACD bearish");}
 
-  if(bb<20){score+=1; reasons.push("BB lower");}
-  else if(bb>80){score-=1; reasons.push("BB upper");}
+  if(bb<20){score+=1; reasons.push("BB lower band");}
+  else if(bb>80){score-=1; reasons.push("BB upper band");}
 
   if(ema9>ema21){score+=1; reasons.push("EMA uptrend");}
   else{score-=1; reasons.push("EMA downtrend");}
@@ -141,39 +143,42 @@ async function load(){
   let grid=document.getElementById("grid");
   grid.innerHTML="Loading...";
 
-  let html="";
+  try{
+    let d=await getData();
+    let a=analyze(d);
+    let price=d.closes.at(-1);
 
-  for(let p of PAIRS){
-    try{
-      let d=await getData(p);
-      let a=analyze(d);
-      let price=d.closes.at(-1);
-
-      html+=`
-      <div class="card">
-        <b>${p}</b><br>
-        ${price.toFixed(5)}
-        <div class="signal ${a.sig}">${a.sig}</div>
-        Confidence: ${a.conf}%<br>
-        <div class="ind">
-          RSI: ${a.rsi.toFixed(1)} |
-          MACD: ${a.macd.toFixed(4)} |
-          BB: ${a.bb.toFixed(1)}%<br>
-          EMA: ${a.ema9>a.ema21?"UP":"DOWN"} |
-          Stoch: ${a.stoch.toFixed(1)}
-        </div>
-        <div class="reason">${a.reasons.join(" • ")}</div>
-      </div>`;
-    }catch{
-      html+=`<div class="card">${p}<br>API limit</div>`;
-    }
+    grid.innerHTML=`
+    <div class="card">
+      <b>EUR/USD</b><br>
+      Price: ${price.toFixed(5)}
+      <div class="signal ${a.sig}">
+        ${a.sig==="UP"?"⬆ UP":a.sig==="DOWN"?"⬇ DOWN":"⏸ WAIT"}
+      </div>
+      Confidence: ${a.conf}%<br>
+      <div class="ind">
+        RSI: ${a.rsi.toFixed(1)} |
+        MACD: ${a.macd.toFixed(4)} |
+        BB: ${a.bb.toFixed(1)}%<br>
+        EMA: ${a.ema9>a.ema21?"UP":"DOWN"} |
+        Stoch: ${a.stoch.toFixed(1)}
+      </div>
+      <div class="reason">${a.reasons.join(" • ")}</div>
+    </div>`;
+    
+  }catch{
+    grid.innerHTML=`
+    <div class="card">
+      <b>EUR/USD</b><br>
+      ⚠️ API limit reached<br>
+      Try again in 1 minute
+    </div>`;
   }
 
-  grid.innerHTML=html;
   document.getElementById("time").textContent=new Date().toLocaleTimeString();
 }
 
-// auto refresh (safe)
+// auto refresh every 60s
 setInterval(load, 60000);
 
 load();
